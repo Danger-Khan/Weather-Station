@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fast Local ESP32 HMI</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            background-color: #0b0e14; 
+            color: #e5e7eb; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #151d2a;
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #263347;
+        }
+        .ip-input-box {
+            display: flex;
+            gap: 10px;
+        }
+        input {
+            background: #0b0e14;
+            border: 1px solid #263347;
+            color: #00E676;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover { background: #1d4ed8; }
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .online { background: #064e3b; color: #34d399; }
+        .offline { background: #7f1d1d; color: #f87171; }
+        
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card {
+            background: #151d2a;
+            border: 1px solid #263347;
+            border-radius: 8px;
+            padding: 24px;
+        }
+        .label { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; }
+        .val { font-size: 64px; font-weight: 800; font-family: monospace; margin: 10px 0; }
+        .temp { color: #f97316; }
+        .humid { color: #38bdf8; }
+        .unit { font-size: 24px; color: #6b7280; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="ip-input-box">
+            <input type="text" id="esp-ip" value="192.168.1.100" placeholder="ESP32 IP Address">
+            <button onclick="connectESP32()">Connect Local Link</button>
+        </div>
+        <div id="status" class="status-badge offline">DISCONNECTED</div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <div class="label">Temperature</div>
+            <div class="val temp"><span id="temp-val">--.-</span><span class="unit">°C</span></div>
+        </div>
+        <div class="card">
+            <div class="label">Humidity</div>
+            <div class="val humid"><span id="humid-val">--</span><span class="unit">%</span></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function connectESP32() {
+            const ip = document.getElementById('esp-ip').value.trim();
+            if (!ip) return alert("Enter ESP32 IP");
+
+            if (ws) ws.close();
+
+            const statusBadge = document.getElementById('status');
+            statusBadge.innerText = "CONNECTING...";
+            statusBadge.className = "status-badge offline";
+
+            // Direct local WebSocket connection on Port 81
+            ws = new WebSocket(`ws://${ip}:81/`);
+
+            ws.onopen = () => {
+                statusBadge.innerText = "LOCAL LINK ONLINE";
+                statusBadge.className = "status-badge online";
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                document.getElementById('temp-val').innerText = data.temperature.toFixed(1);
+                document.getElementById('humid-val').innerText = data.humidity;
+            };
+
+            ws.onclose = () => {
+                statusBadge.innerText = "DISCONNECTED";
+                statusBadge.className = "status-badge offline";
+            };
+
+            ws.onerror = (err) => {
+                console.error("WS Error:", err);
+            };
+        }
+    </script>
+</body>
+</html>
