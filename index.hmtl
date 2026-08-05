@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fast Local ESP32 HMI</title>
+    <title>Global Industrial ESP32 HMI</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
@@ -22,29 +22,7 @@
             margin-bottom: 20px;
             border: 1px solid #263347;
         }
-        .ip-input-box {
-            display: flex;
-            gap: 10px;
-        }
-        input {
-            background: #0b0e14;
-            border: 1px solid #263347;
-            color: #00E676;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 14px;
-        }
-        button {
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
-        }
-        button:hover { background: #1d4ed8; }
+        .title { font-size: 16px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px; }
         .status-badge {
             padding: 6px 12px;
             border-radius: 4px;
@@ -66,65 +44,73 @@
         .temp { color: #f97316; }
         .humid { color: #38bdf8; }
         .unit { font-size: 24px; color: #6b7280; }
+        .footer-note { font-size: 11px; color: #6b7280; margin-top: 8px; }
     </style>
+    <!-- Paho MQTT WebSockets Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
 </head>
 <body>
 
     <div class="header">
-        <div class="ip-input-box">
-            <input type="text" id="esp-ip" value="192.168.1.100" placeholder="ESP32 IP Address">
-            <button onclick="connectESP32()">Connect Local Link</button>
-        </div>
+        <div class="title">REMOTE INDUSTRIAL HMI &mdash; LONG DISTANCE LINK</div>
         <div id="status" class="status-badge offline">DISCONNECTED</div>
     </div>
 
     <div class="grid">
         <div class="card">
-            <div class="label">Temperature</div>
+            <div class="label">Remote Temperature</div>
             <div class="val temp"><span id="temp-val">--.-</span><span class="unit">°C</span></div>
+            <div class="footer-note">Cloud Stream: broker.hivemq.com</div>
         </div>
         <div class="card">
-            <div class="label">Humidity</div>
+            <div class="label">Remote Humidity</div>
             <div class="val humid"><span id="humid-val">--</span><span class="unit">%</span></div>
+            <div class="footer-note">Topic: myfactory/esp32/telemetry</div>
         </div>
     </div>
 
     <script>
-        let ws = null;
+        // Unique MQTT Topic Key to prevent collision with other public users
+        const MQTT_TOPIC = "myfactory/pwr_remote/telemetry"; 
+        const statusBadge = document.getElementById('status');
 
-        function connectESP32() {
-            const ip = document.getElementById('esp-ip').value.trim();
-            if (!ip) return alert("Enter ESP32 IP");
+        // Connect to HiveMQ Public Broker over secure WebSockets
+        const clientID = "web_hmi_" + Math.random().toString(16).substr(2, 8);
+        const client = new Paho.MQTT.Client("broker.hivemq.com", 8000, clientID);
 
-            if (ws) ws.close();
-
-            const statusBadge = document.getElementById('status');
-            statusBadge.innerText = "CONNECTING...";
+        client.onConnectionLost = (responseObject) => {
+            statusBadge.innerText = "CLOUD LINK OFFLINE";
             statusBadge.className = "status-badge offline";
+            setTimeout(connectMQTT, 3000); // Auto-reconnect
+        };
 
-            // Direct local WebSocket connection on Port 81
-            ws = new WebSocket(`ws://${ip}:81/`);
-
-            ws.onopen = () => {
-                statusBadge.innerText = "LOCAL LINK ONLINE";
-                statusBadge.className = "status-badge online";
-            };
-
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
+        client.onMessageArrived = (message) => {
+            try {
+                const data = JSON.parse(message.payloadString);
                 document.getElementById('temp-val').innerText = data.temperature.toFixed(1);
                 document.getElementById('humid-val').innerText = data.humidity;
-            };
+            } catch (e) {
+                console.error("Payload error:", e);
+            }
+        };
 
-            ws.onclose = () => {
-                statusBadge.innerText = "DISCONNECTED";
-                statusBadge.className = "status-badge offline";
-            };
-
-            ws.onerror = (err) => {
-                console.error("WS Error:", err);
-            };
+        function connectMQTT() {
+            statusBadge.innerText = "CONNECTING TO CLOUD...";
+            client.connect({
+                onSuccess: () => {
+                    statusBadge.innerText = "GLOBAL CLOUD ONLINE";
+                    statusBadge.className = "status-badge online";
+                    client.subscribe(MQTT_TOPIC);
+                },
+                onFailure: (err) => {
+                    statusBadge.innerText = "CONNECTION FAILED";
+                    statusBadge.className = "status-badge offline";
+                    setTimeout(connectMQTT, 5000);
+                }
+            });
         }
+
+        connectMQTT();
     </script>
 </body>
 </html>
