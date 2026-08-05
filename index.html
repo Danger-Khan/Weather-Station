@@ -77,15 +77,18 @@
         }
     </style>
     <!-- Paho MQTT WebSockets Engine -->
-    <script>
+   <script>
     const MQTT_TOPIC = "Danger-Khan/Weather-Station/telemetry"; 
     const statusBadge = document.getElementById('status');
 
-    // Use Port 8884 for Secure WebSockets (WSS) required by GitHub Pages HTTPS
+    // Random Client ID to prevent broker disconnect collisions
     const clientID = "web_hmi_" + Math.random().toString(16).substr(2, 8);
-    const client = new Paho.MQTT.Client("broker.hivemq.com", 8884, clientID);
+    
+    // Explicitly define Broker, WSS Port 8884, and Path "/mqtt"
+    const client = new Paho.MQTT.Client("broker.hivemq.com", 8884, "/mqtt", clientID);
 
     client.onConnectionLost = (responseObject) => {
+        console.warn("MQTT Lost Connection:", responseObject.errorMessage);
         statusBadge.innerText = "CLOUD DISCONNECTED";
         statusBadge.className = "status-badge offline";
         setTimeout(connectMQTT, 3000);
@@ -94,27 +97,34 @@
     client.onMessageArrived = (message) => {
         try {
             const data = JSON.parse(message.payloadString);
-            document.getElementById('temp-val').innerText = data.temperature;
-            document.getElementById('humid-val').innerText = data.humidity;
+            if (data.temperature !== undefined) {
+                document.getElementById('temp-val').innerText = data.temperature;
+            }
+            if (data.humidity !== undefined) {
+                document.getElementById('humid-val').innerText = data.humidity;
+            }
         } catch (e) {
-            console.error("Payload error:", e);
+            console.error("Payload parse error:", e);
         }
     };
 
     function connectMQTT() {
-        statusBadge.innerText = "CONNECTING...";
-        
-        // Enable SSL for HTTPS compatibility
+        statusBadge.innerText = "CONNECTING TO CLOUD...";
+        statusBadge.className = "status-badge offline";
+
         client.connect({
             useSSL: true,
+            timeout: 5,
+            keepAliveInterval: 30,
             onSuccess: () => {
+                console.log("Successfully connected to HiveMQ WSS");
                 statusBadge.innerText = "LIVE CLOUD LINK ONLINE";
                 statusBadge.className = "status-badge online";
                 client.subscribe(MQTT_TOPIC);
             },
             onFailure: (err) => {
-                console.error("MQTT Connection Error:", err);
-                statusBadge.innerText = "CONNECTION FAILED";
+                console.error("MQTT Connection Failed:", err);
+                statusBadge.innerText = "CONNECTION FAILED - RETRYING";
                 statusBadge.className = "status-badge offline";
                 setTimeout(connectMQTT, 5000);
             }
