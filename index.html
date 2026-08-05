@@ -77,7 +77,53 @@
         }
     </style>
     <!-- Paho MQTT WebSockets Engine -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <script>
+    const MQTT_TOPIC = "Danger-Khan/Weather-Station/telemetry"; 
+    const statusBadge = document.getElementById('status');
+
+    // Use Port 8884 for Secure WebSockets (WSS) required by GitHub Pages HTTPS
+    const clientID = "web_hmi_" + Math.random().toString(16).substr(2, 8);
+    const client = new Paho.MQTT.Client("broker.hivemq.com", 8884, clientID);
+
+    client.onConnectionLost = (responseObject) => {
+        statusBadge.innerText = "CLOUD DISCONNECTED";
+        statusBadge.className = "status-badge offline";
+        setTimeout(connectMQTT, 3000);
+    };
+
+    client.onMessageArrived = (message) => {
+        try {
+            const data = JSON.parse(message.payloadString);
+            document.getElementById('temp-val').innerText = data.temperature;
+            document.getElementById('humid-val').innerText = data.humidity;
+        } catch (e) {
+            console.error("Payload error:", e);
+        }
+    };
+
+    function connectMQTT() {
+        statusBadge.innerText = "CONNECTING...";
+        
+        // Enable SSL for HTTPS compatibility
+        client.connect({
+            useSSL: true,
+            onSuccess: () => {
+                statusBadge.innerText = "LIVE CLOUD LINK ONLINE";
+                statusBadge.className = "status-badge online";
+                client.subscribe(MQTT_TOPIC);
+            },
+            onFailure: (err) => {
+                console.error("MQTT Connection Error:", err);
+                statusBadge.innerText = "CONNECTION FAILED";
+                statusBadge.className = "status-badge offline";
+                setTimeout(connectMQTT, 5000);
+            }
+        });
+    }
+
+    connectMQTT();
+</script>
+
 </head>
 <body>
 
