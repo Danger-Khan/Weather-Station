@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Danger-Khan Weather Station</title>
-    <!-- Paho MQTT WebSockets Engine (Loaded before main script) -->
+    <!-- Paho MQTT WebSockets Engine -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <!-- Chart.js Engine -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
@@ -21,7 +23,7 @@
 
         .container {
             width: 100%;
-            max-width: 800px;
+            max-width: 900px;
         }
 
         .header {
@@ -71,12 +73,14 @@
             background: #151d2a;
             border: 1px solid #263347;
             border-radius: 10px;
-            padding: 28px;
+            padding: 24px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         }
+
+        .full-width { grid-column: 1 / -1; }
 
         .label-row {
             display: flex;
@@ -85,11 +89,38 @@
         }
 
         .label { font-size: 13px; color: #9ca3af; text-transform: uppercase; font-weight: 600; letter-spacing: 1px; }
-        .val { font-size: 58px; font-weight: 800; font-family: monospace; margin: 16px 0; }
+        .val { font-size: 48px; font-weight: 800; font-family: monospace; margin: 12px 0; }
         .temp { color: #f97316; }
         .humid { color: #38bdf8; }
-        .unit { font-size: 24px; color: #6b7280; font-weight: 400; }
+        .battery { color: #10b981; }
+        .unit { font-size: 20px; color: #6b7280; font-weight: 400; }
         .footer-note { font-size: 12px; color: #6b7280; border-top: 1px solid #263347; padding-top: 12px; }
+
+        /* Dynamic Rain Badge */
+        .rain-status {
+            font-size: 24px;
+            font-weight: 700;
+            padding: 8px 16px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 16px 0;
+            display: inline-block;
+        }
+        .dry { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+        .raining { background: #1e3a8a; color: #60a5fa; border: 1px solid #2563eb; animation: pulse 1.5s infinite; }
+
+        @keyframes pulse {
+            0% { opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { opacity: 0.8; }
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 250px;
+            width: 100%;
+            margin-top: 15px;
+        }
 
         @media (max-width: 600px) {
             .grid { grid-template-columns: 1fr; }
@@ -117,7 +148,7 @@
                     <span class="label">Temperature</span>
                 </div>
                 <div class="val temp"><span id="temp-val">--</span><span class="unit"> °C</span></div>
-                <div class="footer-note">Sensor: DHT11 &bull; Pin: D4</div>
+                <div class="footer-note">Sensor: DHT11 / BMP280</div>
             </div>
 
             <!-- Humidity Card -->
@@ -127,7 +158,40 @@
                     <span class="label">Humidity</span>
                 </div>
                 <div class="val humid"><span id="humid-val">--</span><span class="unit"> %</span></div>
-                <div class="footer-note">Topic: Danger-Khan/Weather-Station/telemetry</div>
+                <div class="footer-note">Sensor: DHT11</div>
+            </div>
+
+            <!-- Rain Status Card -->
+            <div class="card">
+                <div class="label-row">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/><path d="M8 16v2"/><path d="M8 22v.01"/><path d="M12 18v2"/><path d="M12 14v2"/><path d="M16 16v2"/><path d="M16 22v.01"/></svg>
+                    <span class="label">Rain Meter</span>
+                </div>
+                <div>
+                    <div id="rain-badge" class="rain-status dry">NO RAIN</div>
+                </div>
+                <div class="footer-note">Precipitation Status</div>
+            </div>
+
+            <!-- Battery Level Card -->
+            <div class="card">
+                <div class="label-row">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="1" y="6" width="18" height="12" rx="2" ry="2"/><line x1="23" y1="11" x2="23" y2="13"/></svg>
+                    <span class="label">Battery Status</span>
+                </div>
+                <div class="val battery"><span id="batt-val">--</span><span class="unit"> %</span></div>
+                <div class="footer-note">Power Source: Li-Ion / Solar</div>
+            </div>
+
+            <!-- Real-Time Telemetry Graph -->
+            <div class="card full-width">
+                <div class="label-row">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e5e7eb" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    <span class="label">Live Data Trend</span>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="telemetryChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
@@ -149,13 +213,70 @@
         setInterval(updatePKTClock, 1000);
         updatePKTClock();
 
+        // Chart.js Configuration
+        const ctx = document.getElementById('telemetryChart').getContext('2d');
+        const telemetryChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        borderColor: '#f97316',
+                        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                        data: [],
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    },
+                    {
+                        label: 'Humidity (%)',
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                        data: [],
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        grid: { color: '#1e293b' },
+                        ticks: { color: '#9ca3af' }
+                    },
+                    y: {
+                        grid: { color: '#1e293b' },
+                        ticks: { color: '#9ca3af' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#e5e7eb' }
+                    }
+                }
+            }
+        });
+
+        function addChartData(timeStr, temp, humid) {
+            if (telemetryChart.data.labels.length > 10) {
+                telemetryChart.data.labels.shift();
+                telemetryChart.data.datasets[0].data.shift();
+                telemetryChart.data.datasets[1].data.shift();
+            }
+            telemetryChart.data.labels.push(timeStr);
+            telemetryChart.data.datasets[0].data.push(temp);
+            telemetryChart.data.datasets[1].data.push(humid);
+            telemetryChart.update();
+        }
+
+        // MQTT Engine Configuration
         const MQTT_TOPIC = "Danger-Khan/Weather-Station/telemetry"; 
         const statusBadge = document.getElementById('status');
-
-        // Unique client ID to avoid broker collisions
         const clientID = "web_hmi_" + Math.random().toString(16).substr(2, 8);
-        
-        // Connect over Secure WebSockets (WSS) on port 8884 with path "/mqtt"
         const client = new Paho.MQTT.Client("broker.hivemq.com", 8884, "/mqtt", clientID);
 
         client.onConnectionLost = (responseObject) => {
@@ -167,13 +288,36 @@
 
         client.onMessageArrived = (message) => {
             try {
+                // Expecting JSON payload format:
+                // { "temperature": 31.5, "humidity": 78, "rain": true/false, "battery": 95 }
                 const data = JSON.parse(message.payloadString);
+                const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
                 if (data.temperature !== undefined) {
                     document.getElementById('temp-val').innerText = data.temperature;
                 }
                 if (data.humidity !== undefined) {
                     document.getElementById('humid-val').innerText = data.humidity;
                 }
+                if (data.battery !== undefined) {
+                    document.getElementById('batt-val').innerText = data.battery;
+                }
+                if (data.rain !== undefined) {
+                    const rainBadge = document.getElementById('rain-badge');
+                    if (data.rain === true || data.rain === 1 || data.rain === "raining") {
+                        rainBadge.innerText = "🌧️ RAINING";
+                        rainBadge.className = "rain-status raining";
+                    } else {
+                        rainBadge.innerText = "☀️ NO RAIN";
+                        rainBadge.className = "rain-status dry";
+                    }
+                }
+
+                // Push new data points to chart
+                if (data.temperature !== undefined && data.humidity !== undefined) {
+                    addChartData(nowStr, data.temperature, data.humidity);
+                }
+
             } catch (e) {
                 console.error("Payload parse error:", e);
             }
