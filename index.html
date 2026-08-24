@@ -36,6 +36,23 @@
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
         }
 
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .pkt-clock {
+            font-family: monospace;
+            font-size: 14px;
+            font-weight: 700;
+            color: #38bdf8;
+            background: #0f172a;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #1e293b;
+        }
+
         .title { font-size: 18px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px; }
         
         .status-badge {
@@ -76,6 +93,8 @@
 
         @media (max-width: 600px) {
             .grid { grid-template-columns: 1fr; }
+            .header { flex-direction: column; gap: 12px; align-items: flex-start; }
+            .header-right { width: 100%; justify-content: space-between; }
         }
     </style>
 </head>
@@ -84,7 +103,10 @@
     <div class="container">
         <div class="header">
             <div class="title">DANGER-KHAN WEATHER STATION</div>
-            <div id="status" class="status-badge offline">CONNECTING TO CLOUD...</div>
+            <div class="header-right">
+                <div id="pkt-clock" class="pkt-clock">PKT --:--:--</div>
+                <div id="status" class="status-badge offline">CONNECTING TO CLOUD...</div>
+            </div>
         </div>
 
         <div class="grid">
@@ -111,6 +133,22 @@
     </div>
 
     <script>
+        // Live PKT Clock Script (UTC +5)
+        function updatePKTClock() {
+            const clockEl = document.getElementById('pkt-clock');
+            const options = {
+                timeZone: 'Asia/Karachi',
+                hour12: true,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            };
+            const pktTime = new Date().toLocaleTimeString('en-US', options);
+            clockEl.innerText = `PKT ${pktTime}`;
+        }
+        setInterval(updatePKTClock, 1000);
+        updatePKTClock();
+
         const MQTT_TOPIC = "Danger-Khan/Weather-Station/telemetry"; 
         const statusBadge = document.getElementById('status');
 
